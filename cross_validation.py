@@ -19,6 +19,7 @@ def parse_filename(filename):
 def cross_validate_nli_template(df, test_df, df_nli_template):
     results = []
     test_results = []
+    train_results = []
     for header in list(df_nli_template):
         header_results = []
         hypotheses = df_nli_template[header].dropna().values.tolist()
@@ -49,17 +50,28 @@ def cross_validate_nli_template(df, test_df, df_nli_template):
             best_combination = max(header_results, key=lambda item: item[3])
             best_hypothesis = best_combination[1]
             best_threshold = best_combination[2]
+            
             y_true = test_df[header].astype('int64')
             y_probabilities = test_df['pred_' + header + '_' + best_hypothesis].astype('float64')
             y_predicted = y_probabilities.apply(lambda x: 1 if x > best_threshold else 0)
             evaluation = evaluate_predictions(y_true, y_predicted)
             test_results.append((header, best_hypothesis, best_threshold) + evaluation)
 
+            y_true = df[header].astype('int64')
+            y_probabilities = df['pred_' + header + '_' + best_hypothesis].astype('float64')
+            y_predicted = y_probabilities.apply(lambda x: 1 if x > best_threshold else 0)
+            evaluation = evaluate_predictions(y_true, y_predicted)
+            train_results.append((header, best_hypothesis, best_threshold) + evaluation)
+
+
     df_results = pd.DataFrame(results, columns=['Header', 'Label', 'Optimal Threshold', 'MCC', 'Accuracy',
                                                 'Balanced Accuracy', 'F1', 'Items'])
+    
     test_df_results = pd.DataFrame(test_results, columns=['Header', 'Label', 'Optimal Threshold', 'MCC', 'Accuracy',
                                                 'Balanced Accuracy', 'F1', 'Items'])
-    return df_results, test_df_results
+    train_df_results = pd.DataFrame(train_results, columns=['Header', 'Label', 'Optimal Threshold', 'MCC', 'Accuracy',
+                                                'Balanced Accuracy', 'F1', 'Items'])
+    return df_results, test_df_results, train_df_results
 
 
 def evaluate_predictions(y_true, y_pred):
@@ -84,7 +96,9 @@ if __name__ == '__main__':
         df = pd.read_excel(os.path.join('data', 'predicted', 'combined', 'train', filename), index_col=[0]).reset_index(drop=True)
         test_df = pd.read_excel(os.path.join('data', 'predicted', 'combined', 'test', filename), index_col=[0]).reset_index(drop=True)
         
+        
         # merge df and test_df and split again with stratified train-test split
+        np.random.seed(0)
         df_combined = pd.concat([df, test_df], ignore_index=True)
         company_index = list(df_combined.columns).index('company')
         first_pred_index = 0
@@ -104,10 +118,13 @@ if __name__ == '__main__':
         df = pd.DataFrame(df_values, columns=df_combined.columns)
         test_df = pd.DataFrame(test_df_values, columns=df_combined.columns)
         
+        
         nli_template = 'twcs-{}-nli.xlsx'.format(company)
         df_nli_template = pd.read_excel(os.path.join('data', 'nli-templates', direction, nli_template))
-        df_results, test_df_results = cross_validate_nli_template(df, test_df, df_nli_template)
+        df_results, test_df_results, train_df_results = cross_validate_nli_template(df, test_df, df_nli_template)
         test_df_results.to_excel(os.path.join('results', 'nli-cv', 'combined', 'test', 'test_cv_results-{}-{}.xlsx'.format(company, direction)), index=False)
+        train_df_results.to_excel(os.path.join('results', 'nli-cv', 'combined', 'train', 'train_cv_results_best_hyp-{}-{}.xlsx'.format(company, direction)), index=False)
+        
         outfile = 'train_cv_results-{}-{}.xlsx'.format(company, direction)
         writer = pd.ExcelWriter(os.path.join('results', 'nli-cv', 'combined', 'train', outfile), engine='xlsxwriter')
         df_results.to_excel(writer, sheet_name='Sheet1')
