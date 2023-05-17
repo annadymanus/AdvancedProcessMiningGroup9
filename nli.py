@@ -9,7 +9,9 @@ from transformers import pipeline
 
 if torch.cuda.is_available():
     classifier = pipeline('zero-shot-classification', device=0)
+    print("CUDA AVAILABLE")
 else:
+    print("CUDA NOT AVAILABLE")
     classifier = pipeline('zero-shot-classification')
 
 
@@ -30,7 +32,6 @@ def nlp(text, candidate_labels, nlp_cache, hypothesis_template="{}."):
     if len(remaining_candidate_labels) > 0:
         classified = classifier(text, remaining_candidate_labels, hypothesis_template=hypothesis_template,
                                 multi_class=True)
-        print(classified)
         for key, value in zip(classified['labels'], classified['scores']):
             result_dict[key] = value
             nlp_cache[text + '__' + key] = value
@@ -55,21 +56,23 @@ if __name__ == '__main__':
     nlp_cache_stream = open('nlp_cache.pkl', 'rb')
     try:
         nlp_cache = pickle.load(nlp_cache_stream)
-    except EOFError:
+    except Exception as e:
         nlp_cache = dict()
     nlp_cache_stream.close()
 
     if not os.path.exists(os.path.join('data', 'predicted')):
         os.mkdir(os.path.join('data', 'predicted'))
 
-    for filename in os.listdir(os.path.join('data', 'labeled')):
-        company, tweets, direction = parse_filename(filename)
-        df = pd.read_excel(os.path.join('data', 'labeled', filename), index_col=[0])
-        nli_template = 'twcs-{}-nli.xlsx'.format(company)
-        df_nli_template = pd.read_excel(os.path.join('data', 'nli-templates', direction, nli_template))
-        df = predict(df, df_nli_template, nlp_cache)
-        outfile = 'twcs-{}-{}-{}-predicted.xlsx'.format(company, tweets, direction)
-        df.to_excel(os.path.join('data', 'predicted', outfile))
+    for dataset in ['train', 'test']:    
+        for filename in os.listdir(os.path.join('data', 'labeled','combined',dataset)):
+            company, tweets, direction = parse_filename(filename)
+            df = pd.read_excel(os.path.join('data', 'labeled', 'combined',dataset, filename), index_col=[0])
+            nli_template = 'twcs-{}-nli.xlsx'.format(company)
+            df_nli_template = pd.read_excel(os.path.join('data', 'nli-templates', direction, nli_template))
+            df = predict(df, df_nli_template, nlp_cache)
+            outfile = 'twcs-{}-{}-{}-predicted.xlsx'.format(company, tweets, direction)
+            df.to_excel(os.path.join('data', 'predicted', 'combined', dataset, outfile))
+            
 
     with open('nlp_cache.pkl', 'wb+') as outfile:
         pickle.dump(nlp_cache, outfile)
